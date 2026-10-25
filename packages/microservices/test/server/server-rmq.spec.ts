@@ -241,6 +241,25 @@ describe('ServerRMQ', () => {
       await server.close();
       expect(rmqChannel.close).toHaveBeenCalled();
     });
+    it('should set up a new channel when listening again after close', async () => {
+      await server.close();
+      expect(untypedServer.channel).toBeNull();
+
+      const createChannel = vi
+        .fn()
+        .mockImplementation(() => new EventEmitter());
+      const once = vi
+        .fn()
+        .mockImplementation(
+          (event, callback) => event === 'connect' && callback(),
+        );
+      const createClient = vi
+        .spyOn(server, 'createClient')
+        .mockImplementation(() => ({ on: once, once, createChannel }) as any);
+      await server.listen(() => {});
+      expect(createChannel).toHaveBeenCalledOnce();
+      createClient.mockRestore();
+    });
     it('should close the channel before the connection', async () => {
       let closeChannel!: () => void;
       untypedServer.channel = {

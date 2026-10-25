@@ -123,6 +123,8 @@ export class ServerRMQ extends Server<RmqEvents, RmqStatus> {
         throw failure.reason;
       }
     } finally {
+      // start() skips the channel setup while a channel is still referenced
+      this.channel = null;
       this.pendingEventListeners = [];
     }
   }
