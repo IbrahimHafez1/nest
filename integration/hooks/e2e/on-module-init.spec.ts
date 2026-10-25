@@ -1,4 +1,4 @@
-import { Injectable, Module, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Module, OnModuleInit } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 @Injectable()
 class TestInjectable implements OnModuleInit {
@@ -136,6 +136,49 @@ describe('OnModuleInit', () => {
 
     @Module({
       providers: [AHost, A, Composition],
+    })
+    class AModule {}
+
+    const module = await Test.createTestingModule({
+      imports: [AModule],
+    }).compile();
+
+    const app = module.createNestApplication();
+    await app.init();
+    await app.close();
+
+    const child = module.get(A);
+    const parent = module.get(AHost);
+    const composition = module.get(Composition);
+    expect(child.onModuleInit.mock.invocationCallOrder[0]).toBeLessThan(
+      parent.onModuleInit.mock.invocationCallOrder[0],
+    );
+    expect(parent.onModuleInit.mock.invocationCallOrder[0]).toBeLessThan(
+      composition.onModuleInit.mock.invocationCallOrder[0],
+    );
+  });
+  it('should sort components by injection hierarchy when dependencies are property-injected', async () => {
+    @Injectable()
+    class A implements OnModuleInit {
+      onModuleInit = vi.fn();
+    }
+
+    @Injectable()
+    class AHost implements OnModuleInit {
+      @Inject(A)
+      private a: A;
+      onModuleInit = vi.fn();
+    }
+
+    @Injectable()
+    class Composition implements OnModuleInit {
+      @Inject(AHost)
+      private host: AHost;
+      onModuleInit = vi.fn();
+    }
+
+    @Module({
+      providers: [Composition, AHost, A],
     })
     class AModule {}
 

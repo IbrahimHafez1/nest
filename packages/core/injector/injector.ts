@@ -55,6 +55,10 @@ export interface PropertyDependency {
   name: InjectorDependency;
   isOptional?: boolean;
   instance?: any;
+  /**
+   * Hierarchy level of the resolved dependency, used to order lifecycle hooks.
+   */
+  hierarchyLevel?: number;
 }
 
 /**
@@ -255,7 +259,14 @@ export class Injector {
         );
         this.applyProperties(instance, properties);
 
-        wrapper.hierarchyLevel = depth + 1;
+        // Property-injected dependencies place the provider in the hierarchy
+        // just like constructor-injected ones do.
+        const propertiesDepth = properties.reduce(
+          (maxLevel, property) =>
+            Math.max(maxLevel, property.hierarchyLevel ?? 0),
+          0,
+        );
+        wrapper.hierarchyLevel = Math.max(depth, propertiesDepth) + 1;
         wrapper.initTime = this.getNowTimestamp() - t0;
         settlementSignal.complete();
       };
@@ -918,7 +929,7 @@ export class Injector {
     }
     const properties = this.reflectProperties(wrapper.metatype as Type<any>);
     const propertyBarrier = new Barrier(properties.length);
-    const instances = await Promise.all(
+    const resolvedProperties = await Promise.all(
       properties.map(async (item: PropertyDependency) => {
         try {
           const dependencyContext = {
@@ -931,7 +942,7 @@ export class Injector {
              */
             propertyBarrier.signal();
 
-            return parentInquirer && parentInquirer.instance;
+            return { instance: parentInquirer && parentInquirer.instance };
           }
           const nestedResolutionContext =
             this.getStaticTransientResolutionContext(
@@ -975,7 +986,10 @@ export class Injector {
             ),
             effectivePropertyResolutionContext.effectiveInquirerId,
           );
-          return instanceHost.instance;
+          return {
+            instance: instanceHost.instance,
+            hierarchyLevel: paramWrapperWithInstance.hierarchyLevel,
+          };
         } catch (err) {
           /*
            * Signal the barrier to make sure other dependencies do not get stuck waiting forever. We
@@ -993,7 +1007,8 @@ export class Injector {
     );
     return properties.map((item: PropertyDependency, index: number) => ({
       ...item,
-      instance: instances[index],
+      instance: resolvedProperties[index]?.instance,
+      hierarchyLevel: resolvedProperties[index]?.hierarchyLevel,
     }));
   }
 
